@@ -514,3 +514,5 @@ karaoke_blur_intensity = "شدت محوشدگی";
 glass_lyrics_view = "نمای شیشه‌ای متن آهنگ";
 lyrics_source_restart_popup = "برای استفاده از منبع جدید متن آهنگ در همه بخش‌ها، Spotify را مجدداً راه‌اندازی کنید. آهنگ‌هایی که قبلاً پخش شده‌اند تا آن زمان متن قبلی را حفظ می‌کنند.";
 restart_later = "بعداً";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

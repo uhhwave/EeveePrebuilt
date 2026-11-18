@@ -511,3 +511,5 @@ spicylyrics_api_key_placeholder = "Nhập khóa client Spicy";
 glass_lyrics_view = "Chế độ xem lời bài hát tùy chỉnh";
 lyrics_source_restart_popup = "Khởi động lại Spotify để nguồn lời bài hát mới được dùng ở mọi nơi. Các bài đã phát trước đó sẽ giữ lời cũ cho đến khi đó.";
 restart_later = "Để sau";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

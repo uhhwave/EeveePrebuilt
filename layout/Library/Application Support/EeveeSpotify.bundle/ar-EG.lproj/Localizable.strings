@@ -511,3 +511,5 @@ spicylyrics_api_key_placeholder = "أدخل مفتاح عميل Spicy";
 glass_lyrics_view = "عرض الكلمات المخصّص";
 lyrics_source_restart_popup = "أعد تشغيل Spotify ليُستخدم مصدر الكلمات الجديد في كل مكان. الأغاني التي شغّلتها سابقًا تحتفظ بكلماتها القديمة حتى ذلك الحين.";
 restart_later = "لاحقًا";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

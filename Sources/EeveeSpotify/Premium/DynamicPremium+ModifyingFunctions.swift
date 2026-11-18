@@ -38,6 +38,10 @@ private let propertyReplacements = [
     EeveePropertyReplacement(name: "crossfade_enabled", scope: "ios-feature-settings", modification: .forceBool(true)),
     EeveePropertyReplacement(name: "automix_enabled", scope: "ios-feature-settings", modification: .forceBool(true)),
 
+    // the feature-settings flag only draws the row; these are the scopes the
+    // player core actually gates auto mix on. spoti.pw ships the core one.
+    EeveePropertyReplacement(name: "automix_enabled", scope: "core-automix", modification: .forceBool(true)),
+
     // ios featue only draws the row, the player core gates the fade on its own scope
     EeveePropertyReplacement(name: "crossfade_enabled", scope: "core-playback-setup", modification: .forceBool(true)),
 
@@ -414,7 +418,7 @@ func rewriteRemoteConfigurationData(_ data: Data) -> Data? {
     guard var response = try? ResolveResponse(serializedBytes: data),
           !response.configuration.assignedValues.isEmpty else { return nil }
 
-    let replacements = EeveeCrossfade.replacements
+    let replacements = EeveeCrossfade.replacements + EeveeMixing.replacements
     func summary() -> String {
         replacements.compactMap { replacement in
             guard let scope = replacement.scope, let name = replacement.name else { return nil }

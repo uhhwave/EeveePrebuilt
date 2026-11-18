@@ -483,3 +483,5 @@ lyrics_source_restart_popup = "Restart Spotify so the new lyrics source is used 
 restart_later = "Later";
 manage_downloads = "Manage downloads";
 manage_downloads_subtitle = "Офлайн-загрузки Pixie";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

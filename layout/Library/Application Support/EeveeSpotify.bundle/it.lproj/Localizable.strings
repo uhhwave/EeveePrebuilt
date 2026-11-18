@@ -510,3 +510,5 @@ spicylyrics_api_key_placeholder = "Inserisci la chiave client di Spicy";
 glass_lyrics_view = "Vista testi personalizzata";
 lyrics_source_restart_popup = "Riavvia Spotify per usare la nuova fonte dei testi ovunque. Fino ad allora, le canzoni già riprodotte mantengono i testi precedenti.";
 restart_later = "Più tardi";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

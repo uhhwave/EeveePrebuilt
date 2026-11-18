@@ -482,3 +482,5 @@ categoriesSectionDeps1 = "Off = ignore. Show = draw on the bar only. Manual = pr
 spicylyrics_api_key_placeholder = "Enter the Spicy client key";
 lyrics_source_restart_popup = "Restart Spotify so the new lyrics source is used everywhere. Songs you already played keep their old lyrics until then.";
 restart_later = "Later";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

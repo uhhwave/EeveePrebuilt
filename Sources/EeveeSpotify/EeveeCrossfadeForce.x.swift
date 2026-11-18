@@ -41,3 +41,19 @@ func activateEeveeCrossfadeForce() {
     }
     EeveeCrossfadePrefGroup().activate()
 }
+
+// Playlist Mix ("be your own DJ") gates. 9.2 serves these in the v3 remote
+// config, so they must be rewritten there (rewriteRemoteConfigurationData) as
+// well as forced at runtime (MixingTools). is_enabled / free_experience_enabled
+// are the master gates; debug_bypass_mixability_for_dj lets the editor open
+// without the server's mixability metadata. Names taken from 9.2.0.
+enum EeveeMixing {
+    static let replacements = [
+        EeveePropertyReplacement(name: "is_enabled", scope: "ios-playlistcuration-mats", modification: .forceBool(true)),
+        EeveePropertyReplacement(name: "free_experience_enabled", scope: "ios-playlistcuration-mats", modification: .forceBool(true)),
+        EeveePropertyReplacement(name: "debug_bypass_mixability_for_dj", scope: "ios-playlistcuration-mats", modification: .forceBool(true)),
+        EeveePropertyReplacement(name: "backend_auto_transition_enabled", scope: "ios-playlistcuration-mats", modification: .forceBool(true)),
+        EeveePropertyReplacement(name: "header_mix_button_enabled", scope: "ios-playlistcuration-mats", modification: .forceBool(true)),
+        EeveePropertyReplacement(name: "create_new_mixed_playlist_enabled", scope: "ios-playlistmixing-createmenuitemimpl", modification: .forceBool(true)),
+    ]
+}

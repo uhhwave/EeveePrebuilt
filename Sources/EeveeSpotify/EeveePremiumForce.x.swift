@@ -1,4 +1,6 @@
 import Foundation
+import Darwin
+import MachO
 import Orion
 
 private let oneYearFromNowISO: String = {
@@ -34,6 +36,9 @@ private func forcedPremiumString(forKey key: String) -> String? {
     case "can_use_superbird":                      return "1"
     case "manager":                                return "1"
     case "nft-disabled":                           return "1"
+
+    // Playlist Mix editor permission (the "be your own DJ" tools).
+    case "mixing-tools":                           return "EDIT"
 
     case "streaming-rules":                        return ""
     case "previous-streaming-rules":               return ""
@@ -82,6 +87,10 @@ private let directGetterCoreAdKeys: Set<String> = [
     "unrestricted",
     "shuffle-eligible",
     "high-bitrate",
+    // Playlist Mix editor permission. The key isn't in the live product-state
+    // dict (Spotify derives Mix permission from the rest of it), but keep the
+    // mapping reachable instead of dead code.
+    "mixing-tools",
     "streaming-rules",
     "previous-streaming-rules",
     "shuffle",
@@ -137,6 +146,85 @@ private func rewritePremiumDict(_ dict: NSDictionary) -> NSDictionary {
 
     if changed > 0 {
         NSLog("[FORCE][PS.dict] rewrote %d keys (in=%lu out=%lu)", changed, dict.count, mutable.count)
+    }
+    return mutable
+}
+
+// SPTProductState exposes exactly three things: `values`, `originalValues` and
+// `overrides` (all NSDictionary). `MixingPermissionsHandlerImpl` observes product
+// state and reads those directly rather than going through `stringForKey:`, so the
+// getter spoof alone never reached it - it kept seeing the real free-account dict
+// and therefore computed mixing permission `none`.
+//
+// Keep this narrow: only the entitlement keys, and only when they exist. Touching
+// streaming-rules/dates here is what caused greyed-out tracks in the past.
+private let coreValueKeys: [String] = [
+    "type", "catalogue", "product", "name",
+    "player-license", "player-license-v2", "financial-product",
+    "ads", "on-demand", "unrestricted", "shuffle-eligible", "high-bitrate",
+]
+
+private var coreValueCalls = 0
+
+// Keys worth seeing verbatim: they decide whether Spotify thinks this account
+// may open the Mix editor at all.
+private let coreProbeKeys = [
+    "type", "catalogue", "product", "name", "ads",
+    "player-license", "player-license-v2", "financial-product",
+    "on-demand", "unrestricted", "shuffle-eligible", "streaming", "offline",
+    "can-use-offline", "premium-mini", "is-mobile-only-tier",
+    "mixing-tools", "mixing-fx-looping-jogwheel",
+    "com.spotify.madprops.use.ucs.product.state",
+    "client-locked-state", "payments-locked-state", "product-expiry",
+    "subscription-enddate", "has-blend-access", "premium-only-market-mobile",
+]
+
+private func probeValues(_ dict: NSDictionary) -> String {
+    coreProbeKeys.compactMap { key in
+        guard let value = dict[key] else { return nil }
+        return "\(key)=\(value)"
+    }.joined(separator: " ")
+}
+
+// A free account ships `mixing-tools` as a false-ish value. Flip it without
+// changing the value's shape, so an enum-typed attribute can't be corrupted by
+// writing an arbitrary string into it.
+private let falseishMixValues: Set<String> = ["0", "false", "no", "off", "disabled", "none"]
+
+private func rewriteCoreValues(_ dict: NSDictionary) -> NSDictionary {
+    if dict.count == 0 { return dict }
+    coreValueCalls += 1
+    let mutable = NSMutableDictionary(dictionary: dict)
+    var changed: [String] = []
+    for key in coreValueKeys {
+        guard let forced = forcedPremiumString(forKey: key) else { continue }
+        if (mutable[key] as? String) != forced {
+            mutable[key] = forced
+            changed.append(key)
+        }
+    }
+    if let raw = dict["mixing-tools"] as? String {
+        if falseishMixValues.contains(raw.lowercased()) {
+            mutable["mixing-tools"] = raw.lowercased() == "false" ? "true" : "1"
+            let now = (mutable["mixing-tools"] as? String) ?? "?"
+            changed.append("mixing-tools(\(raw)->\(now))")
+        }
+    }
+    // The UCS product state is what the newer client code asks "am I paid?" so
+    // it can decide what to offer. Keep the case it arrived in.
+    if let raw = dict["com.spotify.madprops.use.ucs.product.state"] as? String,
+       raw.lowercased() == "free" {
+        let rewritten = raw == "FREE" ? "PREMIUM" : "premium"
+        mutable["com.spotify.madprops.use.ucs.product.state"] = rewritten
+        changed.append("ucs(\(raw)->\(rewritten))")
+    }
+    // writeDebugLog (not raw NSLog) so these land in the debug log file the user
+    // can actually export from the device. The probe dump is what tells us which
+    // entitlement the Mix permission actually keys off.
+    if coreValueCalls <= 3 {
+        writeDebugLog("[FORCE][PS.values] #\(coreValueCalls) count=\(dict.count) changed=[\(changed.joined(separator: ","))] probe=[\(probeValues(dict))]")
+    } else if coreValueCalls == 25 || coreValueCalls == 100 || coreValueCalls == 400 {
+        writeDebugLog("[FORCE][PS.values] calls=\(coreValueCalls)")
     }
     return mutable
 }
@@ -203,12 +291,12 @@ class CoreProductStateHook: ClassHook<NSObject> {
 
     func values() -> NSDictionary {
         let d = orig.values()
-        return enableDictRewrite ? rewritePremiumDict(d) : d
+        return enableCoreValueRewrite ? rewriteCoreValues(d) : d
     }
 
     func originalValues() -> NSDictionary {
         let d = orig.originalValues()
-        return enableDictRewrite ? rewritePremiumDict(d) : d
+        return enableCoreValueRewrite ? rewriteCoreValues(d) : d
     }
 
     func valuesDictFromMap(_ map: UnsafeRawPointer) -> NSDictionary {
@@ -254,25 +342,121 @@ private func swizzleBoolGetter(_ cls: AnyClass, _ name: String, _ value: Bool) {
 
 struct EeveePremiumForceGroup: HookGroup {}
 
+// Spotify 9.2.0 has three copies of the MixButtonElement tap switch
+// (PromptablePlaylists x2, PlaylistMixing_ElementKit). In all three, tag 0
+// logs "User attempted to enable mixing without permissions `none`" and
+// tag 1 runs the real enable-mixing action. The jump tables are in
+// __DATA_CONST, so swapping one byte redirects the failure to the working
+// case without touching executable pages or the code signature.
+private struct MixSwitchPatch {
+    let signatureAddr: Int
+    let signature: [UInt8]
+    let tableAddr: Int
+    let from: UInt8
+    let to: UInt8
+}
+
+private func forceMixPermissionSwitch() {
+    #if arch(arm64)
+    let patches = [
+        MixSwitchPatch(
+            signatureAddr: 0x101f634ec,
+            signature: [0xe9, 0x79, 0x04, 0xb0, 0x29, 0xc1, 0x0a, 0x91, 0x8a, 0x00, 0x00, 0x10],
+            tableAddr: 0x10aea02b0, from: 0x00, to: 0x2f),
+        MixSwitchPatch(
+            signatureAddr: 0x102cdedc0,
+            signature: [0x08, 0x14, 0x80, 0xb9, 0x68, 0x6a, 0x68, 0x38, 0x09, 0x0e, 0x04, 0xd0],
+            tableAddr: 0x10aea02b4, from: 0x15, to: 0x28),
+        MixSwitchPatch(
+            signatureAddr: 0x10554ce40,
+            signature: [0x08, 0x14, 0x80, 0xb9, 0xa8, 0x6a, 0x68, 0x38, 0xa9, 0xca, 0x02, 0xd0],
+            tableAddr: 0x10aea2a40, from: 0x00, to: 0x2f),
+    ]
+
+    // LiveContainer doesn't guarantee Spotify is dyld image 0, so search the
+    // loaded images rather than assuming the main executable.
+    let imageCount = _dyld_image_count()
+    var applied = 0
+    var logged = 0
+    for i in 0..<imageCount {
+        guard let header = _dyld_get_image_header(i) else { continue }
+        let base = Int(bitPattern: header)
+        guard base > 0x100000000 else { continue }
+        let slide = base - 0x100000000
+        let name = _dyld_get_image_name(i).map { String(cString: $0) } ?? "?"
+        if logged < 24 {
+            writeDebugLog(String(format: "[FORCE] image[%d] %@ slide=%#x", i, name, slide))
+            logged += 1
+        }
+        guard name.lowercased().contains("spotify") else { continue }
+
+        var valid: [MixSwitchPatch] = []
+        for patch in patches {
+            guard let insns = UnsafeRawPointer(bitPattern: slide + patch.signatureAddr) else { continue }
+            var matches = true
+            for (j, want) in patch.signature.enumerated() {
+                if insns.load(fromByteOffset: j, as: UInt8.self) != want {
+                    matches = false
+                    break
+                }
+            }
+            if matches { valid.append(patch) }
+        }
+        guard !valid.isEmpty else {
+            writeDebugLog(String(format: "[FORCE] mix switch: no signature match in %@", name))
+            continue
+        }
+
+        let pageSize = Int(getpagesize())
+        var pages = Set<Int>()
+        for patch in valid {
+            pages.insert((slide + patch.tableAddr) & ~(pageSize - 1))
+        }
+        var writable = Set<Int>()
+        for pageStart in pages {
+            let page = UnsafeMutableRawPointer(bitPattern: pageStart)!
+            if mprotect(page, pageSize, PROT_READ | PROT_WRITE) == 0 {
+                writable.insert(pageStart)
+            } else {
+                writeDebugLog(String(format: "[FORCE] mix switch mprotect failed at %#x", pageStart))
+            }
+        }
+        for patch in valid {
+            let pageStart = (slide + patch.tableAddr) & ~(pageSize - 1)
+            guard writable.contains(pageStart) else { continue }
+            let table = UnsafeMutablePointer<UInt8>(bitPattern: slide + patch.tableAddr)!
+            let old = table.pointee
+            if old == patch.from {
+                table.pointee = patch.to
+            }
+            writeDebugLog(String(format: "[FORCE] mix switch %#x byte %#x->%#x", patch.tableAddr, old, table.pointee))
+            applied += 1
+        }
+        for pageStart in writable {
+            _ = mprotect(UnsafeMutableRawPointer(bitPattern: pageStart)!, pageSize, PROT_READ)
+        }
+    }
+    writeDebugLog(String(format: "[FORCE] mix switch applied %d/3", applied))
+    #endif
+}
+
 private let enableDictRewrite = false
+private let enableCoreValueRewrite = true
 private let enableDirectGetters = true
 private let enableAdsHook = true
 private let enablePassiveProductStateLog = true
 
 func activateEeveePremiumForce() {
-    NSLog("[FORCE] activating dict=%@ getters=%@ ads=%@ passiveLog=%@",
-          enableDictRewrite   ? "on" : "off",
-          enableDirectGetters ? "on" : "off",
-          enableAdsHook       ? "on" : "off",
-          enablePassiveProductStateLog ? "on" : "off")
-    guard enableDictRewrite || enableDirectGetters || enableAdsHook || enablePassiveProductStateLog else {
+    writeDebugLog("[FORCE] build=mix-values-7 dict=\(enableDictRewrite ? "on" : "off") coreValues=\(enableCoreValueRewrite ? "on" : "off") getters=\(enableDirectGetters ? "on" : "off") ads=\(enableAdsHook ? "on" : "off") passiveLog=\(enablePassiveProductStateLog ? "on" : "off")")
+    forceMixPermissionSwitch()
+    guard enableDictRewrite || enableCoreValueRewrite || enableDirectGetters || enableAdsHook || enablePassiveProductStateLog else {
         return
     }
     // This ran completely unguarded before - unlike every other hook group in this
     // codebase - so a Spotify build that renames/removes one of these methods would
     // fail the hook and (pre handleError override) instantly crash at launch.
     guard NSClassFromString("SPTCoreProductState") != nil else {
-        NSLog("[FORCE] Skipped: SPTCoreProductState not found")
+        writeDebugLog("[FORCE] Skipped: SPTCoreProductState not found")
         return
     }
     EeveePremiumForceGroup().activate()

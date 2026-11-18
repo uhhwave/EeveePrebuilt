@@ -518,3 +518,5 @@ lyrics_source_restart_popup = "Yeni şarkı sözü kaynağının her yerde kulla
 restart_later = "Sonra";
 manage_downloads = "İndirmeleri yönet";
 manage_downloads_subtitle = "Pixie çevrimdışı indirmeleri";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";

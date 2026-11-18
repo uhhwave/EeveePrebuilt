@@ -3,6 +3,7 @@ import SwiftUI
 struct SpotifyFeaturesView: View {
     @State private var version = 0
     @State private var hideJam = UserDefaults.hideJam
+    @State private var mixingTools = UserDefaults.mixingTools
     @State private var flagsDefault = FlagOverrides.areDefault(SpotifyFeaturesView.keys)
 
     private static let sections: [(header: String, rows: [(String, String)])] = [
@@ -53,13 +54,18 @@ struct SpotifyFeaturesView: View {
                 Toggle("features_hide_jam".localized, isOn: $hideJam)
             }
 
-            SettingsResetSection(visible: hideJam || !flagsDefault) {
+            Section(footer: Text("features_mixing_footer".localized)) {
+                Toggle("features_mixing".localized, isOn: $mixingTools)
+            }
+
+            SettingsResetSection(visible: hideJam || !mixingTools || !flagsDefault) {
                 hideJam = false
+                mixingTools = true
                 FlagOverrides.clear(Self.keys)
                 version += 1
             }
 
-            if RemoteFlags.needsRestart || hideJam != HideJam.launchEnabled {
+            if RemoteFlags.needsRestart || hideJam != HideJam.launchEnabled || mixingTools != MixingTools.launchEnabled {
                 Section {
                     Button(action: exitApplication) {
                         Text("restart_now".localized).fontWeight(.semibold).frame(maxWidth: .infinity)
@@ -72,6 +78,7 @@ struct SpotifyFeaturesView: View {
         }
         .eeveeSettingsStyle()
         .onChange(of: hideJam) { UserDefaults.hideJam = $0 }
+        .onChange(of: mixingTools) { UserDefaults.mixingTools = $0 }
         .onAppear(perform: refreshFlags)
         .onChange(of: version) { _ in refreshFlags() }
     }
@@ -110,9 +117,74 @@ enum HideJam {
     }
 }
 
+// Forces the client-side flags that expose Spotify's playlist Mix tools (the
+// beat/key editor) on accounts the server doesn't hand them to. The analysis
+// data itself (BPM, Camelot key, beat grid) is available to free accounts via
+// spclient; these flags only decide whether the UI reads and shows it.
+enum MixingTools {
+    static let launchEnabled = UserDefaults.mixingTools
+
+    private static let flags: [String: Bool] = [
+        // master gates (the ones that actually decide whether Mix is offered)
+        "ios-playlistcuration-mats.is_enabled": true,
+        "ios-playlistcuration-mats.free_experience_enabled": true,
+        "ios-playlistcuration-mats.debug_bypass_mixability_for_dj": true,
+        "ios-playlistcuration-mats.backend_auto_transition_enabled": true,
+        "ios-playlistcuration-mats.header_mix_button_enabled": true,
+        "ios-playlistcuration-mats.playlist_reordering_for_mix_entrypoint_enabled": true,
+        "ios-playlistmixing-createmenuitemimpl.create_new_mixed_playlist_enabled": true,
+        "ios-playlistmixing-createmenuitemimpl.beta_tag_enabled": false,
+
+        // Every other Mix-related switch the client actually reads on 9.2.0.
+        // Catalogued from the device's own remote-flag log; the playlist Mix
+        // editor was still reporting permission `none` with these left at false.
+        "ios-list-ux-platform-consumers-extender.mixed_playlist_endpoint_enabled": true,
+        "ios-feature-magpie.mixing_enabled": true,
+        "ios-feature-magpie.mixing_warning_dialog_enabled": true,
+        "ios-feature-nowplaying-elements.mixing_play_button": true,
+        "ios-feature-settings.automix_enabled": true,
+        "ios-feature-search.instant_mix_section_enabled": true,
+        "ios-feature-search.instant_mix_section_animation_enabled": true,
+        "ios-feature-search.instant_mix_section_ai_branding_enabled": true,
+        "ios-feature-search.instant_mix_ux_in_serp_enabled": true,
+        "ios-feature-search.optimized_instant_mix_section_enabled": true,
+        "ios-feature-search.simplified_instant_mix_row_enabled": true,
+        "ios-playlistcuration-mats.auto_mix_enabled_for_dj": true,
+        "ios-playlistcuration-mats.automix_track_order_context_menu_enabled": true,
+        "ios-playlistcuration-mats.dj_auto_mix_context_menu_enabled": true,
+        "ios-playlistcuration-mats.opt_in_new_effects_enabled": true,
+        "ios-playlistcuration-mats.smart_reorder_on_auto_mix_enabled": true,
+        "ios-playlistcuration-mats.third_party_mix_snackbar_enabled": true,
+    ]
+
+    static func activate() {
+        guard launchEnabled else { return }
+        RemoteFlags.shared.force(flags, by: "MixingTools")
+        dumpMixCatalog()
+    }
+
+    // The remote-config catalog already holds every switch Spotify has asked for
+    // on this device, so this prints the real names of the Mix permission gates
+    // instead of us guessing them from the binary.
+    private static func dumpMixCatalog() {
+        let hits = RemoteFlags.shared.loadCatalog().filter {
+            let key = $0.key.lowercased()
+            return key.contains("mix") || key.contains("permission")
+                || key.contains("opt-in") || key.contains("opt_in")
+        }
+        let pairs = hits.prefix(100).map { "\($0.key)=\($0.value)" }
+        eeveeLog("[EeveeSpotify][Mix] catalog hits %d: %@", hits.count, pairs.joined(separator: " | "))
+    }
+}
+
 extension UserDefaults {
     static var hideJam: Bool {
         get { container.bool(forKey: "eeveeHideJam") }
         set { container.set(newValue, forKey: "eeveeHideJam") }
+    }
+
+    static var mixingTools: Bool {
+        get { container.object(forKey: "eeveeMixingTools") as? Bool ?? true }
+        set { container.set(newValue, forKey: "eeveeMixingTools") }
     }
 }

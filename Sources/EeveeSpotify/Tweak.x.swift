@@ -244,6 +244,7 @@ struct EeveeSpotify: Tweak {
             LocalPlaylistDownloadGroup().activate()
         }
         HideJam.activate()
+        MixingTools.activate()
         activateRemoteFlags()
         activateRatingPromptBlock()
 

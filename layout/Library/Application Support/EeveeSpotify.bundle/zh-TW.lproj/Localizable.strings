@@ -516,3 +516,5 @@ spicylyrics_api_key_placeholder = "輸入 Spicy 用戶端金鑰";
 glass_lyrics_view = "自定義歌詞檢視";
 lyrics_source_restart_popup = "請重新啟動 Spotify，讓新的歌詞來源在所有位置生效。在此之前，已播放過的歌曲會保留舊歌詞。";
 restart_later = "稍後";
+features_mixing = "Mixing tools";
+features_mixing_footer = "Shows Spotify's playlist Mix editor (beat/key matching) on free accounts. Restart to apply.";
