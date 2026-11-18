@@ -674,7 +674,7 @@ jobs:
           set -eo pipefail
           gh api repos/theos/sdks/releases/latest --jq '[.assets[] | select(.name | startswith("iPhoneOS")) | [.name,.id,.updated_at,.digest]] | sort | @json'
           BASH
-          if ! theos=$(git ls-remote https://github.com/theos/theos.git refs/heads/master | cut -f1) ||
+          if ! theos=$(git ls-remote https://github.com/theos/theos.git HEAD | cut -f1) ||
              ! sdks=$(bash "$RUNNER_TEMP/eevee-stock-sdk-id") ||
              [[ -z "$theos" || -z "$sdks" || "$sdks" == '[]' ]]; then
             echo "::warning::Could not identify the stock Theos inputs. Building the dylib without caching."
